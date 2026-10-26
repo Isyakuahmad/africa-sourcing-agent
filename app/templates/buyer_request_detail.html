@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}New buyer request{% endblock %}
+{% block content %}
+<div class="card form-card">
+  <h1>Create buyer request</h1>
+  <form method="post" action="/buyer-requests">
+    <div class="form-grid">
+      <label>Buyer name<input name="buyer_name" required /></label>
+      <label>Company name<input name="company_name" required /></label>
+      <label>Email<input type="email" name="email" required /></label>
+      <label>Phone<input name="phone" /></label>
+      <label>Commodity<input name="commodity" required placeholder="Sesame, copper, cocoa..." /></label>
+      <label>Grade / specification<input name="grade_or_spec" /></label>
+      <label>Quantity<input name="quantity" required /></label>
+      <label>Unit<input name="quantity_unit" required placeholder="MT, kg, tons" /></label>
+      <label>Origin country<input name="origin_country" required /></label>
+      <label>Destination country<input name="destination_country" required /></label>
+      <label>Target price<input name="target_price" /></label>
+      <label>Currency<input name="currency" placeholder="USD" /></label>
+      <label>Required certifications<input name="certifications_required" /></label>
+      <label>Expected delivery timeline<input name="delivery_timeline" /></label>
+      <label class="full-width">Notes<textarea name="notes" rows="4"></textarea></label>
+    </div>
+    <button class="primary" type="submit">Save request</button>
+  </form>
+</div>
+{% endblock %}

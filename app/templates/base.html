@@ -1,0 +1,302 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+
+from app.config import APP_NAME, SECRET_KEY
+from app.database import Base, engine, get_db
+from app.helpers import build_request_summary
+from app.models import BuyerRequest, Supplier
+from app.seed_demo import seed_demo_data
+from app.services.matching import build_report_download_text, generate_ai_assistant_summary, risk_flags_for_supplier
+
+BASE_DIR = Path(__file__).resolve().parent
+
+app = FastAPI(title=APP_NAME)
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+Base.metadata.create_all(bind=engine)
+
+
+@app.on_event("startup")
+def startup_event() -> None:
+    db = next(get_db())
+    seed_demo_data(db)
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    buyer_requests = db.query(BuyerRequest).order_by(BuyerRequest.created_at.desc()).all()
+    suppliers = db.query(Supplier).order_by(Supplier.created_at.desc()).all()
+    total_requests = len(buyer_requests)
+    total_suppliers = len(suppliers)
+    awaiting_action = sum(1 for item in buyer_requests if item.status in {"new", "in_review"})
+    verification_tasks = sum(1 for item in suppliers if item.verification_status in {"unverified", "evidence_pending", "under_review"})
+
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "buyer_requests": buyer_requests,
+            "suppliers": suppliers,
+            "total_requests": total_requests,
+            "total_suppliers": total_suppliers,
+            "awaiting_action": awaiting_action,
+            "verification_tasks": verification_tasks,
+            "secret_key": SECRET_KEY,
+            "demo_banner": "DEMO DATA ONLY - Synthetic records for demonstration purposes.",
+        },
+    )
+
+
+@app.get("/buyer-requests/new", response_class=HTMLResponse)
+def buyer_request_form(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("buyer_request_form.html", {"request": request})
+
+
+@app.post("/buyer-requests")
+def create_buyer_request(
+    buyer_name: str = Form(...),
+    company_name: str = Form(...),
+    email: str = Form(...),
+    phone: str | None = Form(default=None),
+    commodity: str = Form(...),
+    grade_or_spec: str | None = Form(default=None),
+    quantity: str = Form(...),
+    quantity_unit: str = Form(...),
+    origin_country: str = Form(...),
+    destination_country: str = Form(...),
+    target_price: str | None = Form(default=None),
+    currency: str | None = Form(default=None),
+    certifications_required: str | None = Form(default=None),
+    delivery_timeline: str | None = Form(default=None),
+    notes: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    if not commodity or not buyer_name or not company_name or not email or not quantity or not quantity_unit or not origin_country or not destination_country:
+        raise HTTPException(status_code=400, detail="Required buyer request fields were missing.")
+
+    request_record = BuyerRequest(
+        buyer_name=buyer_name,
+        company_name=company_name,
+        email=email,
+        phone=phone,
+        commodity=commodity,
+        grade_or_spec=grade_or_spec,
+        quantity=quantity,
+        quantity_unit=quantity_unit,
+        origin_country=origin_country,
+        destination_country=destination_country,
+        target_price=target_price,
+        currency=currency,
+        certifications_required=certifications_required,
+        delivery_timeline=delivery_timeline,
+        notes=notes,
+        status="new",
+    )
+    db.add(request_record)
+    db.commit()
+    db.refresh(request_record)
+    return RedirectResponse(f"/buyer-requests/{request_record.id}", status_code=303)
+
+
+@app.get("/buyer-requests/{buyer_request_id}", response_class=HTMLResponse)
+def buyer_request_detail(request: Request, buyer_request_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
+    request_record = db.query(BuyerRequest).filter(BuyerRequest.id == buyer_request_id).first()
+    if not request_record:
+        raise HTTPException(status_code=404, detail="Buyer request not found.")
+
+    from app.services.matching import build_report_download_text  # local import to avoid circulars
+    suppliers = db.query(Supplier).all()
+    matches = []
+    for supplier in suppliers:
+        candidate = {
+            "supplier": supplier,
+            "match_score": 0,
+            "reasons": [],
+            "is_viable": False,
+        }
+        commodity = supplier.commodities_supplied.lower()
+        if request_record.commodity.lower() in commodity:
+            candidate["match_score"] += 40
+            candidate["reasons"].append("Commodity matches buyer requirement.")
+        if request_record.grade_or_spec and request_record.grade_or_spec.lower() in (supplier.specification or "").lower():
+            candidate["match_score"] += 20
+            candidate["reasons"].append("Grade/specification aligns.")
+        if request_record.origin_country.lower() in (supplier.country or "").lower():
+            candidate["match_score"] += 15
+            candidate["reasons"].append("Origin country corresponds to supplier location.")
+        if supplier.verification_status == "verified":
+            candidate["match_score"] += 10
+            candidate["reasons"].append("Verified status on file.")
+        elif supplier.verification_status in {"unverified", "evidence_pending"}:
+            candidate["match_score"] -= 10
+            candidate["reasons"].append("Evidence is still pending or incomplete.")
+        candidate["is_viable"] = candidate["match_score"] >= 45
+        if candidate["match_score"] >= 25:
+            matches.append(candidate)
+    matches.sort(key=lambda item: item["match_score"], reverse=True)
+
+    ai_summary = generate_ai_assistant_summary(request_record, [match["supplier"] for match in matches])
+    report = {
+        "buyer_requirements": build_request_summary(request_record),
+        "candidate_count": len(matches),
+        "candidates": [
+            {
+                "company_name": match["supplier"].company_name,
+                "country": match["supplier"].country,
+                "commodities_supplied": match["supplier"].commodities_supplied,
+                "quantity_claim": match["supplier"].quantity_claim or "Unknown",
+                "indicative_price": match["supplier"].indicative_price or "Unknown",
+                "currency": match["supplier"].currency or "Not provided",
+                "verification_status": match["supplier"].verification_status,
+                "match_score": match["match_score"],
+                "suitability": "Suitable candidate" if match["is_viable"] else "Needs review",
+                "reasons": match["reasons"],
+                "source_of_information": match["supplier"].source_of_information,
+                "information_date": match["supplier"].information_date or "Unknown",
+                "certificates": match["supplier"].certificates or "Not provided",
+                "risk_flags": risk_flags_for_supplier(match["supplier"]),
+            }
+            for match in matches
+        ],
+        "ai_summary": ai_summary,
+        "disclaimer": "This report is for internal review only and does not guarantee supplier legitimacy, commodity availability, or transaction completion.",
+        "download_text": build_report_download_text(request_record, matches, ai_summary),
+    }
+
+    return templates.TemplateResponse(
+        "buyer_request_detail.html",
+        {
+            "request": request,
+            "buyer_request": request_record,
+            "report": report,
+            "matches": matches,
+        },
+    )
+
+
+@app.get("/buyer-requests/{buyer_request_id}/download")
+def download_report(buyer_request_id: int, db: Session = Depends(get_db)) -> PlainTextResponse:
+    request_record = db.query(BuyerRequest).filter(BuyerRequest.id == buyer_request_id).first()
+    if not request_record:
+        raise HTTPException(status_code=404, detail="Buyer request not found.")
+
+    matches = []
+    for supplier in db.query(Supplier).all():
+        match = {
+            "supplier": supplier,
+            "match_score": 0,
+        }
+        if request_record.commodity.lower() in supplier.commodities_supplied.lower():
+            match["match_score"] += 40
+        if request_record.grade_or_spec and request_record.grade_or_spec.lower() in (supplier.specification or "").lower():
+            match["match_score"] += 20
+        if request_record.origin_country.lower() in supplier.country.lower():
+            match["match_score"] += 15
+        if supplier.verification_status == "verified":
+            match["match_score"] += 10
+        elif supplier.verification_status in {"unverified", "evidence_pending"}:
+            match["match_score"] -= 10
+        if match["match_score"] >= 25:
+            matches.append(match)
+    matches.sort(key=lambda item: item["match_score"], reverse=True)
+    ai_summary = generate_ai_assistant_summary(request_record, [item["supplier"] for item in matches])
+    text = build_report_download_text(request_record, matches, ai_summary)
+    return PlainTextResponse(text)
+
+
+@app.get("/suppliers", response_class=HTMLResponse)
+def supplier_list(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    suppliers = db.query(Supplier).order_by(Supplier.created_at.desc()).all()
+    return templates.TemplateResponse("supplier_list.html", {"request": request, "suppliers": suppliers})
+
+
+@app.get("/suppliers/new", response_class=HTMLResponse)
+def supplier_form(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse("supplier_form.html", {"request": request})
+
+
+@app.post("/suppliers")
+def create_supplier(
+    company_name: str = Form(...),
+    contact_name: str | None = Form(default=None),
+    email: str | None = Form(default=None),
+    phone: str | None = Form(default=None),
+    country: str = Form(...),
+    operating_location: str | None = Form(default=None),
+    commodities_supplied: str = Form(...),
+    quantity_claim: str | None = Form(default=None),
+    specification: str | None = Form(default=None),
+    indicative_price: str | None = Form(default=None),
+    currency: str | None = Form(default=None),
+    source_of_information: str = Form(...),
+    information_date: str | None = Form(default=None),
+    certificates: str | None = Form(default=None),
+    verification_status: str = Form("unverified"),
+    verification_notes: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    supplier = Supplier(
+        company_name=company_name,
+        contact_name=contact_name,
+        email=email,
+        phone=phone,
+        country=country,
+        operating_location=operating_location,
+        commodities_supplied=commodities_supplied,
+        quantity_claim=quantity_claim,
+        specification=specification,
+        indicative_price=indicative_price,
+        currency=currency,
+        source_of_information=source_of_information,
+        information_date=information_date,
+        certificates=certificates,
+        verification_status=verification_status,
+        verification_notes=verification_notes,
+        is_demo_data=False,
+    )
+    if verification_status == "verified" and not (certificates and source_of_information and verification_notes):
+        raise HTTPException(status_code=400, detail="Verified suppliers require documented evidence and a human review note.")
+    db.add(supplier)
+    db.commit()
+    db.refresh(supplier)
+    return RedirectResponse(f"/suppliers/{supplier.id}", status_code=303)
+
+
+@app.get("/suppliers/{supplier_id}", response_class=HTMLResponse)
+def supplier_detail(request: Request, supplier_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
+    supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found.")
+    return templates.TemplateResponse("supplier_detail.html", {"request": request, "supplier": supplier})
+
+
+@app.get("/outreach/{buyer_request_id}", response_class=HTMLResponse)
+def outreach_page(request: Request, buyer_request_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
+    buyer_request = db.query(BuyerRequest).filter(BuyerRequest.id == buyer_request_id).first()
+    if not buyer_request:
+        raise HTTPException(status_code=404, detail="Buyer request not found.")
+    matches = []
+    for supplier in db.query(Supplier).all():
+        if buyer_request.commodity.lower() in supplier.commodities_supplied.lower():
+            matches.append(supplier)
+    subject_supplier = matches[0] if matches else None
+    draft = "No suitable supplier candidates were found. Human review is required before outreach." if subject_supplier is None else f"Subject: RFQ - {buyer_request.commodity}\n\nHello {subject_supplier.company_name}, ..."
+    return templates.TemplateResponse("outreach.html", {"request": request, "buyer_request": buyer_request, "supplier_candidates": matches, "draft": draft})
+
+
+@app.post("/outreach/{buyer_request_id}/approve")
+def approve_outreach(buyer_request_id: int, db: Session = Depends(get_db)) -> RedirectResponse:
+    buyer_request = db.query(BuyerRequest).filter(BuyerRequest.id == buyer_request_id).first()
+    if not buyer_request:
+        raise HTTPException(status_code=404, detail="Buyer request not found.")
+    buyer_request.status = "human_approved"
+    db.commit()
+    return RedirectResponse(f"/buyer-requests/{buyer_request.id}", status_code=303)

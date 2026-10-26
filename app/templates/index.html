@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Africa Sourcing Agent{% endblock %}</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="container nav">
+        <div class="brand">
+          <a href="/">Africa Sourcing Agent</a>
+        </div>
+        <nav>
+          <a href="/">Dashboard</a>
+          <a href="/buyer-requests/new">New buyer request</a>
+          <a href="/suppliers">Suppliers</a>
+          <a href="/suppliers/new">Add supplier</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container main-content">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

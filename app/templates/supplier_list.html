@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Add supplier{% endblock %}
+{% block content %}
+<div class="card form-card">
+  <h1>Add supplier record</h1>
+  <form method="post" action="/suppliers">
+    <div class="form-grid">
+      <label>Company name<input name="company_name" required /></label>
+      <label>Contact name<input name="contact_name" /></label>
+      <label>Email<input type="email" name="email" /></label>
+      <label>Phone<input name="phone" /></label>
+      <label>Country<input name="country" required /></label>
+      <label>Operating location<input name="operating_location" /></label>
+      <label>Commodities supplied<input name="commodities_supplied" required placeholder="sesame, copper" /></label>
+      <label>Claimed quantity<input name="quantity_claim" /></label>
+      <label>Indicative price<input name="indicative_price" /></label>
+      <label>Currency<input name="currency" placeholder="USD" /></label>
+      <label>Source of information<input name="source_of_information" required /></label>
+      <label>Information date<input name="information_date" type="date" /></label>
+      <label>Certificates / documents<input name="certificates" /></label>
+      <label>Verification status
+        <select name="verification_status">
+          <option value="unverified">unverified</option>
+          <option value="evidence_pending">evidence_pending</option>
+          <option value="under_review">under_review</option>
+          <option value="verified">verified</option>
+          <option value="rejected">rejected</option>
+        </select>
+      </label>
+      <label class="full-width">Verification notes<textarea name="verification_notes" rows="4"></textarea></label>
+      <label class="full-width">Specification<textarea name="specification" rows="3"></textarea></label>
+    </div>
+    <button class="primary" type="submit">Save supplier</button>
+  </form>
+</div>
+{% endblock %}

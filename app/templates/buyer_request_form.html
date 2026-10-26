@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Africa Sourcing Agent{% endblock %}
+{% block content %}
+  <div class="alert demo">{{ demo_banner }}</div>
+
+  <h1>Dashboard</h1>
+
+  <div class="stats-grid">
+    <div class="card stat">
+      <span class="label">Buyer requests</span>
+      <strong>{{ total_requests }}</strong>
+    </div>
+    <div class="card stat">
+      <span class="label">Supplier records</span>
+      <strong>{{ total_suppliers }}</strong>
+    </div>
+    <div class="card stat">
+      <span class="label">Awaiting action</span>
+      <strong>{{ awaiting_action }}</strong>
+    </div>
+    <div class="card stat">
+      <span class="label">Verification tasks</span>
+      <strong>{{ verification_tasks }}</strong>
+    </div>
+  </div>
+
+  <div class="section-grid">
+    <section class="card">
+      <h2>Buyer requests</h2>
+      {% if buyer_requests %}
+        <ul class="list">
+          {% for item in buyer_requests %}
+            <li>
+              <a href="/buyer-requests/{{ item.id }}">{{ item.commodity }} · {{ item.company_name }}</a>
+              <small>{{ item.status }}</small>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No buyer requests yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Supplier records</h2>
+      {% if suppliers %}
+        <ul class="list">
+          {% for supplier in suppliers %}
+            <li>
+              <a href="/suppliers/{{ supplier.id }}">{{ supplier.company_name }}</a>
+              <small>{{ supplier.verification_status }}</small>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No suppliers added yet.</p>
+      {% endif %}
+    </section>
+  </div>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Buyer request detail{% endblock %}
+{% block content %}
+  <div class="page-header">
+    <h1>Buyer request</h1>
+    <a class="button secondary" href="/buyer-requests/{{ buyer_request.id }}/download">Download report</a>
+  </div>
+
+  <div class="card">
+    <h2>Requirements</h2>
+    <dl class="detail-list">
+      <div><dt>Buyer</dt><dd>{{ report.buyer_requirements.buyer_name }}</dd></div>
+      <div><dt>Company</dt><dd>{{ report.buyer_requirements.company_name }}</dd></div>
+      <div><dt>Commodity</dt><dd>{{ report.buyer_requirements.commodity }}</dd></div>
+      <div><dt>Grade/spec</dt><dd>{{ report.buyer_requirements.grade_or_spec }}</dd></div>
+      <div><dt>Quantity</dt><dd>{{ report.buyer_requirements.quantity }} {{ report.buyer_requirements.quantity_unit }}</dd></div>
+      <div><dt>Origin</dt><dd>{{ report.buyer_requirements.origin_country }}</dd></div>
+      <div><dt>Destination</dt><dd>{{ report.buyer_requirements.destination_country }}</dd></div>
+      <div><dt>Target price</dt><dd>{{ report.buyer_requirements.target_price }}</dd></div>
+      <div><dt>Currency</dt><dd>{{ report.buyer_requirements.currency }}</dd></div>
+      <div><dt>Certifications</dt><dd>{{ report.buyer_requirements.certifications_required }}</dd></div>
+      <div><dt>Delivery</dt><dd>{{ report.buyer_requirements.delivery_timeline }}</dd></div>
+      <div><dt>Notes</dt><dd>{{ report.buyer_requirements.notes }}</dd></div>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>AI / fallback summary</h2>
+    <p><strong>Mode:</strong> {{ report.ai_summary.mode }}</p>
+    <p>{{ report.ai_summary.summary }}</p>
+    <ul>
+      {% for item in report.ai_summary.notes %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Matching suppliers</h2>
+    {% if report.candidates %}
+      {% for candidate in report.candidates %}
+        <div class="candidate-box">
+          <div class="candidate-header">
+            <h3>{{ candidate.company_name }}</h3>
+            <span class="badge {{ 'success' if candidate.suitability == 'Suitable candidate' else 'warn' }}">{{ candidate.suitability }}</span>
+          </div>
+          <p><strong>Location:</strong> {{ candidate.country }} · <strong>Verification:</strong> {{ candidate.verification_status }}</p>
+          <p><strong>Commodity:</strong> {{ candidate.commodities_supplied }}</p>
+          <p><strong>Quantity claim:</strong> {{ candidate.quantity_claim }}</p>
+          <p><strong>Indicative price:</strong> {{ candidate.indicative_price }} {{ candidate.currency }}</p>
+          <p><strong>Match score:</strong> {{ candidate.match_score }}</p>
+          <p><strong>Evidence source:</strong> {{ candidate.source_of_information }}</p>
+          <p><strong>Last checked:</strong> {{ candidate.information_date }}</p>
+          <p><strong>Certificates:</strong> {{ candidate.certificates }}</p>
+          <ul>
+            {% for reason in candidate.reasons %}
+              <li>{{ reason }}</li>
+            {% endfor %}
+          </ul>
+          {% if candidate.risk_flags %}
+            <p><strong>Risks:</strong></p>
+            <ul>
+              {% for flag in candidate.risk_flags %}
+                <li>{{ flag }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <p>No supplier candidates met the minimum evaluation threshold.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Human-controlled outreach</h2>
+    <p>External communication is not auto-sent. Human approval is required before any outreach or commitment.</p>
+    <a class="button primary" href="/outreach/{{ buyer_request.id }}">Prepare inquiry emails</a>
+    <form method="post" action="/outreach/{{ buyer_request.id }}/approve">
+      <button type="submit" class="button secondary">Mark as human-approved</button>
+    </form>
+  </div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Supplier details{% endblock %}
+{% block content %}
+  <div class="card">
+    <h1>{{ supplier.company_name }}</h1>
+    <p><strong>Country:</strong> {{ supplier.country }}</p>
+    <p><strong>Operating location:</strong> {{ supplier.operating_location or 'Unknown' }}</p>
+    <p><strong>Commodities supplied:</strong> {{ supplier.commodities_supplied }}</p>
+    <p><strong>Claimed quantity:</strong> {{ supplier.quantity_claim or 'Unknown' }}</p>
+    <p><strong>Specification:</strong> {{ supplier.specification or 'Unknown' }}</p>
+    <p><strong>Indicative price:</strong> {{ supplier.indicative_price or 'Unknown' }} {{ supplier.currency or '' }}</p>
+    <p><strong>Source of information:</strong> {{ supplier.source_of_information }}</p>
+    <p><strong>Information date:</strong> {{ supplier.information_date or 'Unknown' }}</p>
+    <p><strong>Certificates:</strong> {{ supplier.certificates or 'Not provided' }}</p>
+    <p><strong>Verification status:</strong> {{ supplier.verification_status }}</p>
+    <p><strong>Verification notes:</strong> {{ supplier.verification_notes or 'Not provided' }}</p>
+  </div>
+{% endblock %}

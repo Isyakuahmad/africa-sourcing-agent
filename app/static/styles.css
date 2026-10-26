@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Outreach{% endblock %}
+{% block content %}
+  <div class="card">
+    <h1>Supplier inquiry preparation</h1>
+    <p>Human approval is required before any external communication is sent.</p>
+    <pre>{{ draft }}</pre>
+    {% if supplier_candidates %}
+      <ul>
+        {% for supplier in supplier_candidates %}
+          <li>{{ supplier.company_name }} · {{ supplier.country }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% endblock %}
